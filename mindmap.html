@@ -1,0 +1,848 @@
+<!DOCTYPE html>
+<html lang="ja">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>マインドマップ</title>
+<style>
+:root {
+  --tb-bg:        #ffffff;
+  --tb-border:    #e2e8f0;
+  --tb-shadow:    0 2px 12px rgba(0,0,0,0.08);
+  --title-color:  #1e293b;
+  --sep-color:    #e2e8f0;
+  --btn-slate-bg: #f1f5f9;
+  --btn-slate-fg: #475569;
+  --hint-bg:      rgba(0,0,0,0.06);
+  --hint-fg:      #64748b;
+  --hint-border:  rgba(0,0,0,0.07);
+}
+body.dark {
+  --tb-bg:        #1a1d2e;
+  --tb-border:    #2d3154;
+  --tb-shadow:    0 2px 12px rgba(0,0,0,0.4);
+  --title-color:  #e2e8f0;
+  --sep-color:    #2d3154;
+  --btn-slate-bg: #334155;
+  --btn-slate-fg: #cbd5e1;
+  --hint-bg:      rgba(0,0,0,0.52);
+  --hint-fg:      #94a3b8;
+  --hint-border:  rgba(255,255,255,0.06);
+}
+
+* { margin: 0; padding: 0; box-sizing: border-box; }
+body {
+  font-family: 'Helvetica Neue', Arial, sans-serif;
+  height: 100vh; display: flex; flex-direction: column;
+  overflow: hidden; user-select: none;
+}
+
+/* ── toolbar ── */
+#toolbar {
+  background: var(--tb-bg);
+  padding: 8px 14px;
+  display: flex; gap: 6px; align-items: center;
+  border-bottom: 1px solid var(--tb-border);
+  flex-shrink: 0;
+  box-shadow: var(--tb-shadow);
+  transition: background 0.25s, border-color 0.25s;
+  position: relative; z-index: 30;
+  flex-wrap: wrap;
+}
+.app-title {
+  color: var(--title-color); font-size: 15px; font-weight: 700;
+  margin-right: 4px; letter-spacing: 0.4px; transition: color 0.25s;
+}
+.sep    { width: 1px; height: 22px; background: var(--sep-color); margin: 0 2px; transition: background 0.25s; }
+.spacer { flex: 1; }
+
+/* ── buttons ── */
+.btn {
+  padding: 6px 11px; border: none; border-radius: 7px; cursor: pointer;
+  font-size: 12px; font-weight: 500;
+  transition: filter 0.15s, transform 0.1s, background 0.25s, color 0.25s;
+  white-space: nowrap; display: flex; align-items: center; gap: 4px; line-height: 1;
+}
+.btn:hover:not(:disabled) { filter: brightness(1.15); transform: translateY(-1px); }
+.btn:active:not(:disabled){ transform: translateY(0); }
+.btn:disabled { opacity: 0.3; cursor: not-allowed; }
+.btn-blue  { background: #3b82f6; color: #fff; }
+.btn-slate { background: var(--btn-slate-bg); color: var(--btn-slate-fg); }
+.btn-red   { background: #ef4444; color: #fff; }
+.btn-green { background: #10b981; color: #fff; }
+.btn-amber { background: #f59e0b; color: #fff; }
+
+/* ── zoom group ── */
+.zoom-group {
+  display: flex; align-items: center;
+  background: var(--btn-slate-bg); border-radius: 8px; padding: 2px; gap: 1px;
+  transition: background 0.25s;
+}
+.btn-icon {
+  padding: 5px 8px; font-size: 15px; font-weight: 400;
+  min-width: 28px; justify-content: center;
+  border-radius: 6px; background: transparent; color: var(--btn-slate-fg);
+}
+.btn-icon:hover:not(:disabled) { background: rgba(0,0,0,0.06); filter: none; transform: none; }
+.zoom-pct {
+  padding: 5px 6px; font-size: 11.5px; font-weight: 600;
+  min-width: 44px; justify-content: center;
+  border-radius: 6px; background: transparent; color: var(--btn-slate-fg);
+  font-variant-numeric: tabular-nums;
+}
+.zoom-pct:hover:not(:disabled) { background: rgba(0,0,0,0.06); filter: none; transform: none; }
+
+/* ── canvas ── */
+#canvas-container { flex: 1; position: relative; overflow: hidden; }
+#canvas { display: block; cursor: default; }
+#canvas.panning  { cursor: grabbing; }
+#canvas.dragging { cursor: grabbing; }
+
+/* ── text edit overlay ── */
+#edit-overlay { display: none; position: absolute; z-index: 20; }
+#edit-input {
+  border: 2.5px solid #3b82f6; border-radius: 8px; outline: none;
+  font-weight: 600; padding: 0 12px; background: #fff; color: #111;
+  width: 100%; text-align: center; box-shadow: 0 6px 24px rgba(0,0,0,0.22);
+}
+
+/* ── color picker popup ── */
+#color-popup {
+  display: none; position: fixed; z-index: 100;
+  background: #fff; border: 1px solid #e2e8f0;
+  border-radius: 12px; padding: 12px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18); width: 196px;
+}
+#color-popup::before {
+  content: ''; position: absolute; top: -6px; left: 20px;
+  width: 12px; height: 12px; background: #fff;
+  border-left: 1px solid #e2e8f0; border-top: 1px solid #e2e8f0;
+  transform: rotate(45deg);
+}
+.popup-label { font-size: 11px; font-weight: 600; color: #94a3b8; letter-spacing: 0.5px; text-transform: uppercase; margin-bottom: 8px; }
+#color-swatches { display: grid; grid-template-columns: repeat(6,1fr); gap: 5px; margin-bottom: 10px; }
+.swatch { width: 26px; height: 26px; border-radius: 50%; cursor: pointer; border: 2px solid transparent; transition: transform 0.12s; }
+.swatch:hover { transform: scale(1.2); }
+.swatch.active { border-color: #1e293b; box-shadow: 0 0 0 2px #fff, 0 0 0 4px #1e293b; }
+.popup-divider { height: 1px; background: #f1f5f9; margin: 8px 0; }
+.custom-row { display: flex; align-items: center; gap: 8px; font-size: 12px; color: #475569; font-weight: 500; }
+#color-custom { width: 28px; height: 28px; border: none; border-radius: 6px; cursor: pointer; padding: 0; background: none; overflow: hidden; }
+
+/* ── size popup ── */
+#size-popup {
+  display: none; position: fixed; z-index: 100;
+  background: #fff; border: 1px solid #e2e8f0;
+  border-radius: 12px; padding: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18); width: 220px;
+}
+#size-popup::before {
+  content: ''; position: absolute; top: -6px; left: 20px;
+  width: 12px; height: 12px; background: #fff;
+  border-left: 1px solid #e2e8f0; border-top: 1px solid #e2e8f0;
+  transform: rotate(45deg);
+}
+.size-popup-title { font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 12px; }
+.size-row { display: flex; align-items: center; gap: 10px; margin-bottom: 10px; }
+.size-label { font-size: 11px; color: #64748b; font-weight: 600; width: 56px; }
+#size-slider { flex: 1; accent-color: #3b82f6; cursor: pointer; }
+#size-value { font-size: 11px; font-weight: 700; color: #334155; width: 28px; text-align: right; font-variant-numeric: tabular-nums; }
+.size-presets { display: flex; gap: 5px; margin-top: 4px; }
+.size-preset { flex: 1; padding: 5px 0; font-size: 11px; font-weight: 600; border: 1.5px solid #e2e8f0; border-radius: 6px; background: #f8fafc; color: #475569; cursor: pointer; text-align: center; transition: all 0.12s; }
+.size-preset:hover { border-color: #3b82f6; color: #3b82f6; background: #eff6ff; }
+
+/* ── note popup ── */
+#note-popup {
+  display: none; position: fixed; z-index: 100;
+  background: #fff; border: 1px solid #e2e8f0;
+  border-radius: 12px; padding: 14px;
+  box-shadow: 0 8px 32px rgba(0,0,0,0.18); width: 270px;
+}
+#note-popup::before {
+  content: ''; position: absolute; top: -6px; left: 20px;
+  width: 12px; height: 12px; background: #fff;
+  border-left: 1px solid #e2e8f0; border-top: 1px solid #e2e8f0;
+  transform: rotate(45deg);
+}
+.note-popup-title { font-size: 12.5px; font-weight: 700; color: #334155; margin-bottom: 10px; }
+#note-textarea {
+  width: 100%; border: 1.5px solid #e2e8f0; border-radius: 8px;
+  padding: 8px 10px; font-size: 12.5px; font-family: inherit;
+  resize: vertical; outline: none; color: #334155;
+  min-height: 90px; margin-bottom: 10px; line-height: 1.55;
+}
+#note-textarea:focus { border-color: #3b82f6; }
+.note-actions { display: flex; align-items: center; gap: 6px; }
+.note-hint { font-size: 10.5px; color: #94a3b8; margin-top: 7px; }
+
+/* ── hint ── */
+#hint {
+  position: absolute; bottom: 14px; left: 50%; transform: translateX(-50%);
+  background: var(--hint-bg); color: var(--hint-fg);
+  padding: 6px 16px; border-radius: 20px; font-size: 11px;
+  pointer-events: none; white-space: nowrap;
+  border: 1px solid var(--hint-border);
+  transition: background 0.25s, color 0.25s, border-color 0.25s;
+}
+</style>
+</head>
+<body>
+
+<div id="toolbar">
+  <span class="app-title">🧠 マインドマップ</span>
+  <div class="sep"></div>
+  <button class="btn btn-blue"  id="btn-add"    disabled>＋ 子ノード追加</button>
+  <button class="btn btn-slate" id="btn-edit"   disabled>✏ 名前を変更</button>
+  <button class="btn btn-slate" id="btn-color"  disabled>🎨 カラー</button>
+  <button class="btn btn-slate" id="btn-size"   disabled>⬡ サイズ</button>
+  <button class="btn btn-amber" id="btn-note"   disabled>💬 注釈</button>
+  <button class="btn btn-red"   id="btn-delete" disabled>🗑 削除</button>
+  <div class="sep"></div>
+  <button class="btn btn-slate" id="btn-reset">↺ リセット</button>
+  <div class="spacer"></div>
+  <div class="zoom-group">
+    <button class="btn btn-icon" id="btn-zoom-out" title="縮小">－</button>
+    <button class="btn zoom-pct" id="btn-zoom-reset" title="リセット">100%</button>
+    <button class="btn btn-icon" id="btn-zoom-in"  title="拡大">＋</button>
+  </div>
+  <div class="sep"></div>
+  <button class="btn btn-slate" id="btn-theme">🌙 ダークモード</button>
+  <button class="btn btn-green" id="btn-export">💾 画像を保存</button>
+</div>
+
+<!-- color picker -->
+<div id="color-popup">
+  <div class="popup-label">ノードカラー</div>
+  <div id="color-swatches"></div>
+  <div class="popup-divider"></div>
+  <div class="custom-row">
+    <span>カスタム</span>
+    <input type="color" id="color-custom" value="#3b82f6" />
+  </div>
+</div>
+
+<!-- size popup -->
+<div id="size-popup">
+  <div class="size-popup-title">⬡ ノードサイズ</div>
+  <div class="size-row">
+    <span class="size-label">スケール</span>
+    <input type="range" id="size-slider" min="50" max="200" value="100" step="5" />
+    <span id="size-value">100%</span>
+  </div>
+  <div class="size-presets">
+    <button class="size-preset" data-scale="70">小</button>
+    <button class="size-preset" data-scale="100">標準</button>
+    <button class="size-preset" data-scale="140">大</button>
+    <button class="size-preset" data-scale="180">特大</button>
+  </div>
+</div>
+
+<!-- note editor -->
+<div id="note-popup">
+  <div class="note-popup-title">💬 注釈を編集</div>
+  <textarea id="note-textarea" placeholder="ノードの注釈を入力…"></textarea>
+  <div class="note-actions">
+    <button class="btn btn-red"   id="note-delete">🗑 削除</button>
+    <div class="spacer"></div>
+    <button class="btn btn-slate" id="note-cancel">キャンセル</button>
+    <button class="btn btn-blue"  id="note-save">保存</button>
+  </div>
+  <div class="note-hint">Ctrl+Enter で保存 &nbsp;·&nbsp; Esc でキャンセル</div>
+</div>
+
+<div id="canvas-container">
+  <canvas id="canvas"></canvas>
+  <div id="edit-overlay">
+    <input id="edit-input" type="text" placeholder="テキストを入力…" />
+  </div>
+  <div id="hint">
+    ダブルクリック: 編集 &nbsp;·&nbsp; 注釈をドラッグ: 移動 &nbsp;·&nbsp;
+    Tab: 子ノード追加 &nbsp;·&nbsp; 空白ドラッグ: パン &nbsp;·&nbsp; スクロール: ズーム
+  </div>
+</div>
+
+<script>
+(function () {
+  /* ════ DOM ════ */
+  const canvas       = document.getElementById('canvas');
+  const ctx          = canvas.getContext('2d');
+  const container    = document.getElementById('canvas-container');
+  const overlay      = document.getElementById('edit-overlay');
+  const editInput    = document.getElementById('edit-input');
+  const colorPopup   = document.getElementById('color-popup');
+  const colorCustom  = document.getElementById('color-custom');
+  const sizePopup    = document.getElementById('size-popup');
+  const sizeSlider   = document.getElementById('size-slider');
+  const sizeValueEl  = document.getElementById('size-value');
+  const notePopup    = document.getElementById('note-popup');
+  const noteTA       = document.getElementById('note-textarea');
+  const zoomResetBtn = document.getElementById('btn-zoom-reset');
+
+  /* ════ Theme ════ */
+  let darkMode = false;
+  const THEME = {
+    light: {
+      canvasBg: '#f5f7fb', dotColor: 'rgba(0,0,0,0.055)',
+      shadowColor: 'rgba(0,0,0,0.15)', selRing: 'rgba(0,0,0,0.75)',
+      bubbleBg: '#ffffff', bubbleBd: '#cbd5e1', bubbleTxt: '#334155',
+      bubbleHandleBg: 'rgba(59,130,246,0.18)', bubbleHandleBd: '#3b82f6'
+    },
+    dark: {
+      canvasBg: '#0f1117', dotColor: 'rgba(255,255,255,0.04)',
+      shadowColor: 'rgba(0,0,0,0.45)', selRing: 'rgba(255,255,255,0.9)',
+      bubbleBg: '#1e293b', bubbleBd: '#334155', bubbleTxt: '#e2e8f0',
+      bubbleHandleBg: 'rgba(59,130,246,0.25)', bubbleHandleBd: '#60a5fa'
+    }
+  };
+  const theme = () => darkMode ? THEME.dark : THEME.light;
+
+  function applyTheme() {
+    document.body.classList.toggle('dark', darkMode);
+    document.getElementById('btn-theme').textContent = darkMode ? '☀️ ライトモード' : '🌙 ダークモード';
+    render();
+  }
+
+  /* ════ Palette ════ */
+  const BRANCH_COLORS = ['#f97316','#10b981','#8b5cf6','#ef4444','#06b6d4','#f59e0b','#ec4899','#84cc16'];
+  const SWATCHES      = ['#ef4444','#f97316','#f59e0b','#84cc16','#22c55e','#10b981','#06b6d4','#3b82f6','#6366f1','#8b5cf6','#ec4899','#64748b'];
+
+  const swatchContainer = document.getElementById('color-swatches');
+  SWATCHES.forEach(hex => {
+    const d = document.createElement('div');
+    d.className = 'swatch'; d.style.background = hex; d.dataset.color = hex;
+    d.addEventListener('click', () => { changeNodeColor(hex, false); closeColorPopup(); });
+    swatchContainer.appendChild(d);
+  });
+  function updateSwatchActive(c) {
+    document.querySelectorAll('.swatch').forEach(s => s.classList.toggle('active', s.dataset.color === c));
+    colorCustom.value = /^#[0-9a-f]{6}$/i.test(c) ? c : '#3b82f6';
+  }
+
+  /* ════ State ════ */
+  let nodes    = [];
+  let selId    = null;
+  let dragNode = null, dragOff = {x:0,y:0};
+  let editId   = null;
+  let counter  = 0;
+  // bubble drag state
+  let dragBubble = null, dragBubbleOff = {x:0,y:0};
+
+  /* ════ Zoom / pan ════ */
+  let zoom = 1, panX = 0, panY = 0;
+  let panning = false, panStart = {x:0,y:0};
+  const s2c = (sx,sy) => ({ x:(sx-panX)/zoom, y:(sy-panY)/zoom });
+  const c2s = (cx,cy) => ({ x:cx*zoom+panX,   y:cy*zoom+panY   });
+
+  function setZoom(nz, cx, cy) {
+    if (cx==null) { cx=canvas.width/2; cy=canvas.height/2; }
+    nz = Math.max(0.1, Math.min(5, nz));
+    const f = nz/zoom;
+    panX = cx-(cx-panX)*f; panY = cy-(cy-panY)*f; zoom = nz;
+    zoomResetBtn.textContent = Math.round(zoom*100)+'%';
+    render();
+  }
+  function resetZoom() { zoom=1; panX=0; panY=0; zoomResetBtn.textContent='100%'; render(); }
+
+  /* ════ Node helpers ════ */
+  function uid() { return ++counter; }
+
+  function makeNode(x, y, text, parentId) {
+    const parent = parentId!=null ? nodes.find(n=>n.id===parentId) : null;
+    const isRoot = parentId==null;
+    let branchColor;
+    if (isRoot) { branchColor='#3b82f6'; }
+    else if (parent&&parent.isRoot) { branchColor=BRANCH_COLORS[nodes.filter(n=>n.parentId===parentId).length%BRANCH_COLORS.length]; }
+    else { branchColor=parent?parent.branchColor:'#3b82f6'; }
+    // scale: 100 = default, range 50–200
+    return { id:uid(), x, y, text, parentId, isRoot, branchColor, note:'', scale:100,
+             noteOffsetAngle: -Math.PI/2, noteOffsetDist: 80 };
+  }
+
+  function nodeSize(node) {
+    const sc = (node.scale||100)/100;
+    ctx.font=`${node.isRoot?'bold ':''}${Math.round((node.isRoot?15:13)*sc)}px "Helvetica Neue",Arial,sans-serif`;
+    const tw=ctx.measureText(node.text).width;
+    const px=(node.isRoot?26:20)*sc;
+    return { w:Math.max(tw+px*2, (node.isRoot?130:90)*sc), h:(node.isRoot?48:36)*sc, sc };
+  }
+
+  function hitNode(node,cx,cy) {
+    const {w,h}=nodeSize(node);
+    return cx>=node.x-w/2&&cx<=node.x+w/2&&cy>=node.y-h/2&&cy<=node.y+h/2;
+  }
+  function nodeAt(cx,cy) {
+    for (let i=nodes.length-1;i>=0;i--) if(hitNode(nodes[i],cx,cy)) return nodes[i];
+    return null;
+  }
+
+  /* ════ Bubble helpers ════ */
+  const B_MAX_W=170, B_PAD=9, B_FS=11, B_LH=16, B_TAIL=8;
+
+  function wrapText(text, maxW) {
+    ctx.font=`${B_FS}px "Helvetica Neue",Arial,sans-serif`;
+    const result=[];
+    for (const para of text.split('\n')) {
+      const words=para.split(' '); let line='';
+      for (const w of words) {
+        const test=line?line+' '+w:w;
+        if (ctx.measureText(test).width>maxW&&line) { result.push(line); line=w; }
+        else { line=test; }
+      }
+      result.push(line);
+    }
+    return result.length?result:[''];
+  }
+
+  // Bubble positioned by angle+distance from node
+  function bubblePos(node) {
+    const {h} = nodeSize(node);
+    const angle = node.noteOffsetAngle != null ? node.noteOffsetAngle : -Math.PI/2;
+    const dist  = node.noteOffsetDist  != null ? node.noteOffsetDist  : h/2 + B_TAIL + 10;
+    const bx = node.x + Math.cos(angle) * dist;
+    const by = node.y + Math.sin(angle) * dist;
+    return { bx, by, angle };
+  }
+
+  function bubbleBounds(node) {
+    if (!node.note) return null;
+    const lines = wrapText(node.note, B_MAX_W-B_PAD*2);
+    ctx.font=`${B_FS}px "Helvetica Neue",Arial,sans-serif`;
+    const maxLW=Math.max(...lines.map(l=>ctx.measureText(l).width));
+    const bw=Math.max(60, Math.min(B_MAX_W, maxLW+B_PAD*2));
+    const bh=lines.length*B_LH+B_PAD*2;
+    const {bx, by} = bubblePos(node);
+    // bubble center = bx, by; box origin at top-left
+    return { x:bx-bw/2, y:by-bh/2, w:bw, h:bh, lines, cx:bx, cy:by };
+  }
+
+  function bubbleAt(cx,cy) {
+    for (let i=nodes.length-1;i>=0;i--) {
+      const bb=bubbleBounds(nodes[i]);
+      if (bb&&cx>=bb.x&&cx<=bb.x+bb.w&&cy>=bb.y&&cy<=bb.y+bb.h) return nodes[i];
+    }
+    return null;
+  }
+
+  /* ════ Drawing ════ */
+  function roundRect(x,y,w,h,r) {
+    ctx.beginPath();
+    ctx.moveTo(x+r,y); ctx.lineTo(x+w-r,y); ctx.arcTo(x+w,y,x+w,y+r,r);
+    ctx.lineTo(x+w,y+h-r); ctx.arcTo(x+w,y+h,x+w-r,y+h,r);
+    ctx.lineTo(x+r,y+h); ctx.arcTo(x,y+h,x,y+h-r,r);
+    ctx.lineTo(x,y+r); ctx.arcTo(x,y,x+r,y,r);
+    ctx.closePath();
+  }
+
+  function drawConnection(from,to) {
+    const dx=to.x-from.x;
+    ctx.save(); ctx.strokeStyle=to.branchColor+'aa'; ctx.lineWidth=2.5; ctx.lineCap='round';
+    ctx.beginPath(); ctx.moveTo(from.x,from.y);
+    ctx.bezierCurveTo(from.x+dx*0.5,from.y, to.x-dx*0.5,to.y, to.x,to.y);
+    ctx.stroke(); ctx.restore();
+  }
+
+  function drawNode(node) {
+    const {w,h,sc}=nodeSize(node);
+    const x=node.x-w/2, y=node.y-h/2;
+    const r=(node.isRoot?13:9)*sc;
+    const isSelected=node.id===selId;
+    const color=node.branchColor;
+    const t=theme();
+
+    ctx.save();
+    ctx.shadowColor=isSelected?color+'bb':t.shadowColor;
+    ctx.shadowBlur=isSelected?22:10; ctx.shadowOffsetY=3;
+    roundRect(x,y,w,h,r); ctx.fillStyle=color; ctx.fill();
+    ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+
+    if (isSelected) {
+      roundRect(x-3,y-3,w+6,h+6,r+3);
+      ctx.strokeStyle=t.selRing; ctx.lineWidth=2.5; ctx.stroke();
+    }
+
+    const grad=ctx.createLinearGradient(x,y,x,y+h);
+    grad.addColorStop(0,'rgba(255,255,255,0.22)'); grad.addColorStop(1,'rgba(0,0,0,0)');
+    roundRect(x,y,w,h,r); ctx.fillStyle=grad; ctx.fill();
+
+    ctx.fillStyle='rgba(255,255,255,0.95)';
+    ctx.font=`${node.isRoot?'bold ':''}${Math.round((node.isRoot?15:13)*sc)}px "Helvetica Neue",Arial,sans-serif`;
+    ctx.textAlign='center'; ctx.textBaseline='middle';
+    ctx.fillText(node.text, node.x, node.y);
+
+    ctx.restore();
+  }
+
+  // Draw line from node edge to bubble, plus bubble box
+  function drawBubble(node) {
+    const bb=bubbleBounds(node); if (!bb) return;
+    const {x,y,w,h,lines,cx,cy}=bb;
+    const t=theme();
+    const isSelected = node.id===selId;
+    const {bx,by,angle} = bubblePos(node);
+
+    // connector line from node surface to bubble
+    const {w:nw,h:nh} = nodeSize(node);
+    const edgeX = node.x + Math.cos(angle)*nw/2;
+    const edgeY = node.y + Math.sin(angle)*nh/2;
+
+    ctx.save();
+    ctx.strokeStyle = isSelected ? '#3b82f6' : t.bubbleBd;
+    ctx.lineWidth = 1.5; ctx.setLineDash([4,3]); ctx.lineDashOffset=0;
+    ctx.beginPath(); ctx.moveTo(edgeX, edgeY); ctx.lineTo(cx, cy);
+    ctx.stroke(); ctx.setLineDash([]);
+
+    // bubble box shadow
+    ctx.shadowColor='rgba(0,0,0,0.12)'; ctx.shadowBlur=10; ctx.shadowOffsetY=3;
+    roundRect(x,y,w,h,8); ctx.fillStyle=t.bubbleBg; ctx.fill();
+    ctx.shadowColor='transparent'; ctx.shadowBlur=0; ctx.shadowOffsetY=0;
+    ctx.strokeStyle = isSelected ? '#3b82f6' : t.bubbleBd;
+    ctx.lineWidth = isSelected ? 1.8 : 1.2; ctx.stroke();
+
+    // text
+    ctx.fillStyle=t.bubbleTxt;
+    ctx.font=`${B_FS}px "Helvetica Neue",Arial,sans-serif`;
+    ctx.textAlign='left'; ctx.textBaseline='top';
+    lines.forEach((line,i) => ctx.fillText(line, x+B_PAD, y+B_PAD+i*B_LH));
+
+    // drag handle indicator when selected
+    if (isSelected) {
+      const hR=7;
+      ctx.beginPath(); ctx.arc(cx,cy,hR,0,Math.PI*2);
+      ctx.fillStyle=t.bubbleHandleBg; ctx.fill();
+      ctx.strokeStyle=t.bubbleHandleBd; ctx.lineWidth=1.5; ctx.stroke();
+      // crosshair
+      ctx.strokeStyle=t.bubbleHandleBd; ctx.lineWidth=1.2;
+      ctx.beginPath(); ctx.moveTo(cx-4,cy); ctx.lineTo(cx+4,cy); ctx.stroke();
+      ctx.beginPath(); ctx.moveTo(cx,cy-4); ctx.lineTo(cx,cy+4); ctx.stroke();
+    }
+
+    ctx.restore();
+  }
+
+  function render() {
+    const t=theme();
+    ctx.clearRect(0,0,canvas.width,canvas.height);
+    ctx.fillStyle=t.canvasBg; ctx.fillRect(0,0,canvas.width,canvas.height);
+
+    /* dot grid */
+    const step=36*zoom, ox=((panX%step)+step)%step, oy=((panY%step)+step)%step;
+    ctx.fillStyle=t.dotColor;
+    for (let gx=ox;gx<canvas.width;gx+=step)
+    for (let gy=oy;gy<canvas.height;gy+=step) {
+      ctx.beginPath(); ctx.arc(gx,gy,1,0,Math.PI*2); ctx.fill();
+    }
+
+    ctx.save(); ctx.translate(panX,panY); ctx.scale(zoom,zoom);
+    for (const node of nodes) {
+      if (node.parentId!=null) { const par=nodes.find(n=>n.id===node.parentId); if(par) drawConnection(par,node); }
+    }
+    for (const node of nodes) drawNode(node);
+    for (const node of nodes) drawBubble(node);
+    ctx.restore();
+  }
+
+  /* ════ Selection ════ */
+  function updateButtons() {
+    const s=nodes.find(n=>n.id===selId);
+    document.getElementById('btn-add').disabled    = !s;
+    document.getElementById('btn-edit').disabled   = !s;
+    document.getElementById('btn-color').disabled  = !s;
+    document.getElementById('btn-size').disabled   = !s;
+    document.getElementById('btn-note').disabled   = !s;
+    document.getElementById('btn-delete').disabled = !s||s.isRoot;
+  }
+  function select(id) {
+    selId=id; updateButtons();
+    if (id==null) { closeColorPopup(); closeSizePopup(); closeNotePopup(); }
+    render();
+  }
+
+  /* ════ Color picker ════ */
+  let colorPopupOpen=false;
+  function openColorPopup() {
+    const btn=document.getElementById('btn-color'), rect=btn.getBoundingClientRect();
+    colorPopup.style.left=rect.left+'px'; colorPopup.style.top=(rect.bottom+8)+'px';
+    colorPopup.style.display='block'; colorPopupOpen=true;
+    const node=nodes.find(n=>n.id===selId); if(node) updateSwatchActive(node.branchColor);
+  }
+  function closeColorPopup() { colorPopup.style.display='none'; colorPopupOpen=false; }
+  function toggleColorPopup() { colorPopupOpen?closeColorPopup():openColorPopup(); }
+
+  // changed: no longer propagate to children by default (nodeOnly=true)
+  function changeNodeColor(color, propagate) {
+    const node=nodes.find(n=>n.id===selId); if(!node) return;
+    if (propagate) {
+      const old=node.branchColor;
+      (function prop(id) {
+        const n=nodes.find(x=>x.id===id); if(!n) return;
+        if(n.branchColor===old) n.branchColor=color;
+        nodes.filter(x=>x.parentId===id).forEach(c=>prop(c.id));
+      })(node.id);
+    } else {
+      node.branchColor=color;
+    }
+    updateSwatchActive(color); render();
+  }
+
+  /* ════ Size popup ════ */
+  let sizePopupOpen=false;
+  function openSizePopup() {
+    const btn=document.getElementById('btn-size'), rect=btn.getBoundingClientRect();
+    sizePopup.style.left=rect.left+'px'; sizePopup.style.top=(rect.bottom+8)+'px';
+    sizePopup.style.display='block'; sizePopupOpen=true;
+    const node=nodes.find(n=>n.id===selId);
+    const sc=node?(node.scale||100):100;
+    sizeSlider.value=sc; sizeValueEl.textContent=sc+'%';
+  }
+  function closeSizePopup() { sizePopup.style.display='none'; sizePopupOpen=false; }
+  function toggleSizePopup() { sizePopupOpen?closeSizePopup():openSizePopup(); }
+
+  sizeSlider.addEventListener('input', ()=>{
+    const node=nodes.find(n=>n.id===selId); if(!node) return;
+    const v=parseInt(sizeSlider.value);
+    node.scale=v; sizeValueEl.textContent=v+'%'; render();
+  });
+  document.querySelectorAll('.size-preset').forEach(btn=>{
+    btn.addEventListener('click',()=>{
+      const node=nodes.find(n=>n.id===selId); if(!node) return;
+      const sc=parseInt(btn.dataset.scale);
+      node.scale=sc; sizeSlider.value=sc; sizeValueEl.textContent=sc+'%'; render();
+    });
+  });
+
+  /* ════ Note popup ════ */
+  let notePopupOpen=false;
+  function openNotePopup() {
+    const btn=document.getElementById('btn-note'), rect=btn.getBoundingClientRect();
+    notePopup.style.left=rect.left+'px'; notePopup.style.top=(rect.bottom+8)+'px';
+    notePopup.style.display='block'; notePopupOpen=true;
+    const node=nodes.find(n=>n.id===selId);
+    noteTA.value=node?(node.note||''):'';
+    requestAnimationFrame(()=>{ noteTA.focus(); noteTA.setSelectionRange(noteTA.value.length,noteTA.value.length); });
+  }
+  function closeNotePopup() { notePopup.style.display='none'; notePopupOpen=false; }
+  function toggleNotePopup() { notePopupOpen?closeNotePopup():openNotePopup(); }
+
+  function saveNote() {
+    const node=nodes.find(n=>n.id===selId); if(!node) return;
+    node.note=noteTA.value.trim(); closeNotePopup(); render();
+  }
+  function deleteNote() {
+    const node=nodes.find(n=>n.id===selId); if(!node) return;
+    node.note=''; closeNotePopup(); render();
+  }
+
+  /* ════ Child placement ════ */
+  function childPos(parent) {
+    const count=nodes.filter(n=>n.parentId===parent.id).length;
+    if (parent.isRoot) {
+      const angles=[0,Math.PI,-Math.PI/2,Math.PI/2,Math.PI/4,-Math.PI/4,3*Math.PI/4,-3*Math.PI/4];
+      const a=angles[count%angles.length];
+      return {x:parent.x+Math.cos(a)*200, y:parent.y+Math.sin(a)*200};
+    }
+    const gp=nodes.find(n=>n.id===parent.parentId);
+    const a=gp?Math.atan2(parent.y-gp.y,parent.x-gp.x):0, pa=a+Math.PI/2;
+    const sideAmt=count===0?0:Math.ceil(count/2)*52, side=count%2===0?1:-1;
+    return {x:parent.x+Math.cos(a)*155+Math.cos(pa)*side*sideAmt, y:parent.y+Math.sin(a)*155+Math.sin(pa)*side*sideAmt};
+  }
+
+  /* ════ Add / delete ════ */
+  function addChild() {
+    const par=nodes.find(n=>n.id===selId); if(!par) return;
+    closeColorPopup(); closeSizePopup(); closeNotePopup();
+    const pos=childPos(par), node=makeNode(pos.x,pos.y,'新しいノード',par.id);
+    nodes.push(node); selId=node.id; select(node.id); startEdit(node);
+  }
+  function deleteSelected() {
+    const s=nodes.find(n=>n.id===selId); if(!s||s.isRoot) return;
+    const del=new Set();
+    (function collect(id){ del.add(id); nodes.filter(n=>n.parentId===id).forEach(c=>collect(c.id)); })(s.id);
+    nodes=nodes.filter(n=>!del.has(n.id)); select(null);
+  }
+
+  /* ════ Text editing ════ */
+  function startEdit(node) {
+    if(!node) return; closeColorPopup(); closeSizePopup(); closeNotePopup();
+    editId=node.id;
+    const {w,h}=nodeSize(node), sc=c2s(node.x,node.y);
+    const sw=w*zoom, sh=h*zoom;
+    overlay.style.display='block';
+    overlay.style.left=(sc.x-sw/2)+'px'; overlay.style.top=(sc.y-sh/2)+'px';
+    overlay.style.width=sw+'px';
+    editInput.style.height=sh+'px'; editInput.style.lineHeight=sh+'px';
+    const nodeSc=(node.scale||100)/100;
+    editInput.style.fontSize=Math.max(9,(node.isRoot?15:13)*nodeSc*zoom)+'px';
+    editInput.value=node.text;
+    requestAnimationFrame(()=>{ editInput.focus(); editInput.select(); });
+  }
+  function finishEdit() {
+    if(editId==null) return;
+    const node=nodes.find(n=>n.id===editId);
+    if(node){ const v=editInput.value.trim(); if(v) node.text=v; }
+    editId=null; overlay.style.display='none'; render();
+  }
+  function cancelEdit() { editId=null; overlay.style.display='none'; render(); }
+
+  /* ════ Bubble drag handle hit test ════ */
+  function bubbleHandleAt(cx,cy) {
+    for (let i=nodes.length-1;i>=0;i--) {
+      const node=nodes[i]; if(!node.note) continue;
+      const {bx,by}=bubblePos(node);
+      const dx=cx-bx, dy=cy-by;
+      if(Math.sqrt(dx*dx+dy*dy)<=9) return node;
+    }
+    return null;
+  }
+
+  /* ════ Init / resize ════ */
+  function init() {
+    nodes=[]; selId=null; counter=0; zoom=1; panX=0; panY=0;
+    zoomResetBtn.textContent='100%'; closeColorPopup(); closeSizePopup(); closeNotePopup();
+    const root=makeNode(canvas.width/2,canvas.height/2,'メインテーマ',null);
+    root.isRoot=true; nodes.push(root); select(null); render();
+  }
+  function resize() { canvas.width=container.clientWidth; canvas.height=container.clientHeight; render(); }
+
+  /* ════ Mouse ════ */
+  canvas.addEventListener('mousedown', e=>{
+    if(editId!=null) finishEdit();
+    closeColorPopup(); closeSizePopup();
+    const rect=canvas.getBoundingClientRect();
+    const sx=e.clientX-rect.left, sy=e.clientY-rect.top;
+    const {x,y}=s2c(sx,sy);
+
+    // 1. bubble drag handle (only if selected)
+    const hNode = bubbleHandleAt(x,y);
+    if (hNode && hNode.id===selId) {
+      dragBubble=hNode;
+      dragBubbleOff={x:0,y:0}; // track from center directly
+      canvas.classList.add('dragging');
+      return;
+    }
+
+    // 2. bubble body click → select node
+    const bNode=bubbleAt(x,y);
+    if(bNode){ select(bNode.id); return; }
+
+    // 3. node click
+    const node=nodeAt(x,y);
+    if(node){
+      select(node.id); dragNode=node; dragOff={x:x-node.x,y:y-node.y};
+      canvas.classList.add('dragging');
+    } else {
+      select(null); panning=true; panStart={x:sx-panX,y:sy-panStart.y||sy-panY};
+      panStart={x:sx-panX,y:sy-panY};
+      canvas.classList.add('panning');
+    }
+  });
+
+  canvas.addEventListener('mousemove', e=>{
+    const rect=canvas.getBoundingClientRect();
+    const sx=e.clientX-rect.left, sy=e.clientY-rect.top;
+    const {x,y}=s2c(sx,sy);
+
+    if(dragBubble){
+      // update angle + dist from node
+      const dx=x-dragBubble.x, dy=y-dragBubble.y;
+      dragBubble.noteOffsetAngle=Math.atan2(dy,dx);
+      dragBubble.noteOffsetDist=Math.max(30,Math.sqrt(dx*dx+dy*dy));
+      render();
+    } else if(dragNode){
+      dragNode.x=x-dragOff.x; dragNode.y=y-dragOff.y; render();
+    } else if(panning){
+      panX=sx-panStart.x; panY=sy-panStart.y; render();
+    }
+  });
+
+  canvas.addEventListener('mouseup',   ()=>{ dragNode=null; dragBubble=null; panning=false; canvas.classList.remove('dragging','panning'); });
+  canvas.addEventListener('mouseleave',()=>{ dragNode=null; dragBubble=null; panning=false; canvas.classList.remove('dragging','panning'); });
+
+  canvas.addEventListener('dblclick', e=>{
+    const rect=canvas.getBoundingClientRect();
+    const {x,y}=s2c(e.clientX-rect.left, e.clientY-rect.top);
+    const bNode=bubbleAt(x,y);
+    if(bNode){ select(bNode.id); openNotePopup(); return; }
+    const node=nodeAt(x,y);
+    if(node){ select(node.id); startEdit(node); }
+  });
+
+  canvas.addEventListener('wheel', e=>{
+    e.preventDefault();
+    const rect=canvas.getBoundingClientRect();
+    setZoom(zoom*(e.deltaY<0?1.12:1/1.12), e.clientX-rect.left, e.clientY-rect.top);
+  }, {passive:false});
+
+  // cursor feedback
+  canvas.addEventListener('mousemove', e=>{
+    if(dragBubble||dragNode||panning) return;
+    const rect=canvas.getBoundingClientRect();
+    const {x,y}=s2c(e.clientX-rect.left, e.clientY-rect.top);
+    if(bubbleHandleAt(x,y)) canvas.style.cursor='grab';
+    else if(nodeAt(x,y)||bubbleAt(x,y)) canvas.style.cursor='pointer';
+    else canvas.style.cursor='default';
+  });
+
+  document.addEventListener('mousedown', e=>{
+    if(colorPopupOpen&&!colorPopup.contains(e.target)&&e.target.id!=='btn-color') closeColorPopup();
+    if(sizePopupOpen &&!sizePopup.contains(e.target) &&e.target.id!=='btn-size')  closeSizePopup();
+    if(notePopupOpen &&!notePopup.contains(e.target) &&e.target.id!=='btn-note')  closeNotePopup();
+  }, true);
+
+  /* ════ Keyboard ════ */
+  document.addEventListener('keydown', e=>{
+    if(editId!=null) return;
+    if(notePopupOpen){
+      if(e.key==='Escape'){ closeNotePopup(); e.stopPropagation(); }
+      if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)) saveNote();
+      return;
+    }
+    if(e.key==='Tab')   { e.preventDefault(); addChild(); return; }
+    if(e.key==='Escape'){ select(null); return; }
+    if(e.key==='Delete'||e.key==='Backspace'){ const s=nodes.find(n=>n.id===selId); if(s&&!s.isRoot) deleteSelected(); }
+    if(e.key==='Enter'||e.key==='F2'){ const s=nodes.find(n=>n.id===selId); if(s) startEdit(s); }
+    if((e.ctrlKey||e.metaKey)&&(e.key==='+'||e.key==='=')){ e.preventDefault(); setZoom(zoom*1.2); }
+    if((e.ctrlKey||e.metaKey)&&e.key==='-'){ e.preventDefault(); setZoom(zoom/1.2); }
+    if((e.ctrlKey||e.metaKey)&&e.key==='0'){ e.preventDefault(); resetZoom(); }
+  });
+
+  editInput.addEventListener('keydown', e=>{ if(e.key==='Enter'){e.preventDefault();finishEdit();} if(e.key==='Escape')cancelEdit(); e.stopPropagation(); });
+  editInput.addEventListener('blur', ()=>setTimeout(finishEdit,120));
+
+  colorCustom.addEventListener('input',  ()=>changeNodeColor(colorCustom.value, false));
+  colorCustom.addEventListener('change', ()=>closeColorPopup());
+
+  noteTA.addEventListener('keydown', e=>{
+    if(e.key==='Escape'){ closeNotePopup(); e.stopPropagation(); }
+    if(e.key==='Enter'&&(e.ctrlKey||e.metaKey)){ saveNote(); e.stopPropagation(); }
+  });
+
+  /* ════ Toolbar ════ */
+  document.getElementById('btn-add').addEventListener('click', addChild);
+  document.getElementById('btn-edit').addEventListener('click', ()=>{ const s=nodes.find(n=>n.id===selId); if(s) startEdit(s); });
+  document.getElementById('btn-color').addEventListener('click', toggleColorPopup);
+  document.getElementById('btn-size').addEventListener('click',  toggleSizePopup);
+  document.getElementById('btn-note').addEventListener('click', toggleNotePopup);
+  document.getElementById('btn-delete').addEventListener('click', deleteSelected);
+  document.getElementById('btn-reset').addEventListener('click', ()=>{ if(confirm('マインドマップをリセットしますか？')) init(); });
+  document.getElementById('btn-theme').addEventListener('click', ()=>{ darkMode=!darkMode; applyTheme(); });
+  document.getElementById('btn-zoom-in').addEventListener('click',    ()=>setZoom(zoom*1.2));
+  document.getElementById('btn-zoom-out').addEventListener('click',   ()=>setZoom(zoom/1.2));
+  document.getElementById('btn-zoom-reset').addEventListener('click', resetZoom);
+  document.getElementById('note-save').addEventListener('click',   saveNote);
+  document.getElementById('note-delete').addEventListener('click', deleteNote);
+  document.getElementById('note-cancel').addEventListener('click', closeNotePopup);
+  document.getElementById('btn-export').addEventListener('click', ()=>{
+    closeColorPopup(); closeSizePopup(); closeNotePopup(); select(null);
+    requestAnimationFrame(()=>{
+      const link=document.createElement('a');
+      link.download='mindmap_'+new Date().toISOString().slice(0,10)+'.png';
+      link.href=canvas.toDataURL('image/png'); link.click();
+    });
+  });
+
+  /* ════ Boot ════ */
+  window.addEventListener('resize', resize);
+  resize(); init(); applyTheme();
+})();
+</script>
+</body>
+</html>
